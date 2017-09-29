@@ -12,4 +12,6 @@ You can find a small example dataset for your project in [data/examples](https:/
 
 #### Real data
 
-You will need to download real data for your project and process it into the same format as the example data. You will create a _S. cerevisiae_ hierarchy from the [Gene Ontology](http://www.geneontology.org/), and use the genetic interactions data from Costanzo, et al. (Science, 2010). (Costanzo, et al. recently took down their website hosting files from their paper, so you can access a copy I downloaded previously using [this link](https://www.dropbox.com/s/ivsz67jqvkqh0gr/sgadata_costanzo2009_rawdata_101120.txt?dl=0).)
+You will need to download real data for your project and process it into the same format as the example data. You will create a _S. cerevisiae_ hierarchy from the [Gene Ontology](http://www.geneontology.org/).
+
+For genetic interaction data, Yu, et al. used the ~3 million interactions from Costanzo, et al. (Science, 2010). However, because 3 million is probably too many for you to reasonably be able to compute in a short period of time, please use the data from Collins, et al. (Nature, 2007) instead. I've already preprocessed the data, and you can download it from [this link](https://www.dropbox.com/s/git94f7j7avtg62/collins-sc-emap-gis.tsv?dl=0).

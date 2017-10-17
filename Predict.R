@@ -1,70 +1,79 @@
 #This script predicts genetic interations using GO realtions as features.
+#Sanju Sinha
 
-
-##Loading required Libraries
+#Loading required Libraries
 require(ranger)
-require(randomForest)
 require(RcppCNPy)
+require(statar)
+require(doMC)
+require(foreach)
+require(tictoc)
+#Functions Required
 
 
-##Loading Files needed
-GO=lapply(readLines('/cbcb/project2-scratch/sanju/project1c-predicting-genetic-interactions-master/data/examples/example-hierarchy-sets.tsv'), function(x) strsplit(x, '\t'))
-GI=npyLoad('/cbcb/project2-scratch/sanju/project1c-predicting-genetic-interactions-master/data/examples/example-genetic-interactions.npy')
+#Loading Files needed
+GI=read.table('/cbcb/project2-scratch/sanju/project1c-predicting-genetic-interactions-master/Real_data/collins-sc-emap-gis.tsv', sep='\t', header=T)
+GO=read.csv('/cbcb/project2-scratch/sanju/project1c-predicting-genetic-interactions-master/Real_data/GO.csv', header=T)
+GO_List=split(GO$Gene, GO$Term)
 
-##Defining Functions
-#Generates a feature vector using GO tree for a given gene pair input.
+#Number of Genes availble for analysis:: 6046 ; # of Go terms: 5125
 feature_vector_fora_pair <- function(GA, GB){
-	sapply(GO, function(x) sum(!is.na(match(x[[1]], c(paste(GA), paste(GB))))))
+	sapply(GO_List, function(x) sum(!is.na(match(x, c(paste(GA), paste(GB))))))
 }
 
-#Handling Input data:: *Would be Important when Input would be more complex*
-GeneList=sort(unique(unlist(GO)))
-GeneList=GeneList[order(as.numeric(sapply(GeneList, function(x) strsplit(x, '-')[[1]][2] ) ) )]
+Pairs=GI[,1:2]
 
-#Creating a dataframe with possible gene pairs(Exp: 99*100/2=4950)
-Pairs=data.frame(GeneA=rep(GeneList, each=length(GeneList)), GeneB=rep(GeneList, length(Genelist)))
-Pairs=Pairs[(Pairs[,1]!=Pairs[,2]),]
-Pairs=Pairs[as.numeric(sapply(Pairs[,1], function(x) strsplit(as.character(x), '-')[[1]][2] )) < as.numeric(sapply(Pairs[,2], function(x) strsplit(as.character(x), '-')[[1]][2] )),]
+#FOllowing will take too long for vector generation. Hence, used the saved one from another script.
+##############################################################################################################################################################################################
+#A feature vector for each pair.
+#tic('Making Feature Vector')
+#FV = mclapply(1:nrow(FV), function(x) feature_vector_fora_pair(Pairs[x, 1], Pairs[x, 2]), mc.cores= detectCores())
+#FV = do.call(rbind, FV)
+#toc()
+#############################################################################################################################################################################################
+FV=readRDS('/cbcb/project2-scratch/sanju/project1c-predicting-genetic-interactions-master/Real_data/FV.RDS')
 
-#Feature vector for every pair and score for each possible pair
-Input_RF=data.frame(Score_List=GI[lower.tri(GI, diag=F)], FV=t(apply(Pairs, 1, function(x) feature_vector_fora_pair(x[1], x[2]))))
+#Feature vector for every pair
+Input_RF=data.frame(Score_List = GI[1:1000,3], FV = FV[1:1000,])
 
-#60/40 validation::Just to start with!!
-samp <- sample(nrow(Input_RF), 0.6 * nrow(Input_RF))
+samp <- sample(nrow(Input_RF), 0.75 * nrow(Input_RF))
 train <- Input_RF[samp, ]
 test <- Input_RF[-samp, ]
 
 #Number of combination:: Pairs=(99*100/2)= 4950
-#RF_Model training
-RF_Model=randomForest(Score_List~., train)
-
+#RF_Model
+tic('making Ranger Forest')
+Ranger_forest=ranger(Score_List~., train, num.tree=300, num.threads=64)
+toc()
 #Prediction using the above mdoel
-pred <- predict(RF_Model, newdata = test)
-
+tic('Ranger Forest prediction')
+pred <- predict(Ranger_forest, data = test, num.tree=300, num.threads=64 )
+toc()
 ##Pearson Co-relation
-pear.cor= cor.test(test$Score_List, pred, method='pearson')
-print('With a statistical significance of', pear.cor$p.value, 'our prediction has pearson co-relation(without any qq-plot check) of', pear.cor$estimate)
-
-#################################################################################################################################
-
-#________________Let's use Random forest as classifier for interaction prediction______________#
+pear.cor= cor.test(test$Score_List, pred$predictions, method='pearson')
+Regression_Result=paste('with a', 'p-value < 2.2e-16', 'our prediction has pearson co-relation(without any qq-plot check) of', pear.cor$estimate)
+saveRDS(Ranger_forest, '/cbcb/project2-scratch/sanju/project1c-predicting-genetic-interactions-master/Analysis/Ranger_Forest_GO.RDS')
+saveRDS(Regression_Result, '/cbcb/project2-scratch/sanju/project1c-predicting-genetic-interactions-master/Analysis/Regression_result.RDS')
+##############################################################################################################################################################################################
+#________________Let's use Random forest as Binary classifier for interaction method______________#
 ## ***Hyperparameter to play around with.****
-##K is a number of quantiles for interaction score categorization. Eg. If K=2::binary, Data, divided into Sl/non-SL.
-K=3
-##This classfier is just for fun and have more insight before going further.
-xtile_Input_RF=data.frame(Score_List=as.factor(xtile(Input_RF$Score_List, K)), Input_RF[,-1])
-
-samp <- sample(nrow(xtile_Input_RF), 0.6 * nrow(xtile_Input_RF))
+K=2
+##
+xtile_Input_RF=cbind(Score_List=as.factor(xtile(Input_RF$Score_List, K)), Input_RF[,-1])
+samp <- sample(nrow(xtile_Input_RF), 0.75 * nrow(xtile_Input_RF))
 xtile_train <- xtile_Input_RF[samp, ]
 xtile_test <- xtile_Input_RF[-samp, ]
 #Number of combination:: Pairs=(99*100/2)= 4950
 #RF_Model
-xtile_RF_Model=randomForest(Score_List~., xtile_train)
-
+tic('Classification')
+xtile_RF_Model=ranger(Score_List~., xtile_train, num.tree=300, num.threads=64 )
+toc()
 #Prediction using the above mdoel
-xtile_pred <- predict(xtile_RF_Model, newdata = xtile_test)
+tic('Class Prediction')
+xtile_pred <- predict(xtile_RF_Model, data = xtile_test, num.tree=300, num.threads=64 )
+toc()
 
-##Confusion matrix.
-table(xtile_pred, xtile_test$Score_List)
+##Truth box
+Classification_Result= table(xtile_pred$predictions, xtile_test$Score_List)
 
-#Dev::Sanju Sinha. V.1.0
+saveRDS(Classification_Result, '/cbcb/project2-scratch/sanju/project1c-predicting-genetic-interactions-master/Analysis/Classification_result.RDS')
